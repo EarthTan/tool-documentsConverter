@@ -1,0 +1,14 @@
+# 文档转换工具依赖
+
+# PDF转换
+pdfminer.six>=20221105
+
+# Word文档转换（可选，但推荐安装）
+python-docx>=1.1.0
+
+# 其他可选工具需要通过系统包管理器安装：
+# - pandoc: 通用文档转换工具
+# - antiword: 针对.doc文件的工具  
+# - catdoc: 文本提取工具
+# - marker: PDF转Markdown专用工具
+# - pdftotext: 来自poppler工具集
