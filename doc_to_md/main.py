@@ -13,14 +13,16 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Any
 
 # 导入配置管理器
 try:
     from .config_manager import ConfigManager, create_arg_parser
+    from .delete_manager import DeleteManager
 except ImportError:
     # 当直接运行main.py时使用绝对导入
     from config_manager import ConfigManager, create_arg_parser
+    from delete_manager import DeleteManager
 
 
 def supports_color() -> bool:
@@ -272,42 +274,64 @@ def ask_yes_no(prompt: str, default_no: bool = True) -> bool:
             return False
 
 
-def maybe_delete_source(doc_path: Path, config, dry_run: bool) -> Tuple[bool, str]:
-    delete_source = config.get("file_handling.delete_source", False)
-    ask_before_delete = config.get("file_handling.ask_before_delete", True)
-    
-    if not delete_source:
-        return False, "keep source"
-    
-    do_delete = True
-    if ask_before_delete:
-        do_delete = ask_yes_no(f"删除源文件? {doc_path}", default_no=True)
-    
-    if not do_delete:
-        return False, "keep source (user declined)"
-    
-    if dry_run:
-        return True, "DRY-RUN delete source"
-    
-    try:
-        doc_path.unlink()
-        return True, "deleted source"
-    except Exception as e:
-        return False, f"delete source failed: {e}"
-
-
 def run_one(
     doc_path: Path,
     root: Path,
     config,
     dry_run: bool,
+    delete_manager: Optional[DeleteManager] = None,
 ) -> TaskResult:
     t0 = time.perf_counter()
     final_md = compute_final_md_path(doc_path, config)
 
-    force = config.get("conversion.force", False)
+    # 辅助函数：从嵌套字典获取值
+    def get_nested(config_dict, key_path: str, default: Any = None) -> Any:
+        """从嵌套字典中获取值，支持点分隔键路径"""
+        keys = key_path.split('.')
+        value = config_dict
+        
+        for k in keys:
+            if isinstance(value, dict) and k in value:
+                value = value[k]
+            else:
+                return default
+        
+        return value
+
+    # 调试日志（已禁用）
+    # print(f"[DEBUG] run_one开始:")
+    # print(f"[DEBUG]   doc_path: {doc_path}")
+    # print(f"[DEBUG]   final_md: {final_md}")
+    # print(f"[DEBUG]   final_md.exists(): {final_md.exists()}")
+    # print(f"[DEBUG]   delete_manager: {delete_manager}")
+    # if delete_manager:
+    #     print(f"[DEBUG]   delete_manager.delete_source: {delete_manager.delete_source}")
+    #     print(f"[DEBUG]   delete_manager.delete_mode: {delete_manager.delete_mode}")
+
+    force = get_nested(config, "conversion.force", False)
+    # print(f"[DEBUG]   force: {force}")
     if final_md.exists() and not force:
+        # print(f"[DEBUG]   文件已存在，跳过转换")
         return TaskResult(doc_path, final_md, "skipped", time.perf_counter() - t0, "目标 Markdown 已存在，跳过（用 --force 覆盖）")
+    
+    # 转换前删除（如果配置要求）
+    delete_before_msg = ""
+    if delete_manager and delete_manager.delete_source:
+        delete_mode = delete_manager.delete_mode
+        print(f"[DEBUG]   检查转换前删除，模式: {delete_mode}")
+        if delete_mode == "before_conversion":
+            # 转换前删除
+            print(f"[DEBUG]   执行转换前删除")
+            delete_success, delete_msg = delete_manager.delete_source_file(
+                doc_path, final_md, dry_run, user_confirmed=False
+            )
+            if delete_success:
+                delete_before_msg = f", 转换前删除: {delete_msg}"
+                print(f"[DEBUG]   转换前删除成功: {delete_msg}")
+            else:
+                # 如果转换前删除失败，可以继续尝试转换
+                delete_before_msg = f", 转换前删除失败: {delete_msg}"
+                print(f"[DEBUG]   转换前删除失败: {delete_msg}")
 
     base_out = root / "_marker_outputs"
     doc_out = base_out / f"{safe_stem(doc_path)}__{abs(hash(str(doc_path))) % 10**8}"
@@ -397,16 +421,32 @@ def run_one(
         if produced_file != final_md:
             shutil.copy2(produced_file, final_md)
         
-        # 删除源文件（如果配置要求）
-        delete_result, delete_msg = maybe_delete_source(doc_path, config, dry_run)
+        # 转换后删除（如果配置要求且不是转换前删除模式）
+        delete_after_msg = ""
+        if delete_manager and delete_manager.delete_source:
+            delete_mode = delete_manager.delete_mode
+            print(f"[DEBUG]   检查转换后删除，模式: {delete_mode}")
+            if delete_mode == "after_conversion":
+                # 转换后删除
+                print(f"[DEBUG]   执行转换后删除")
+                delete_success, delete_msg = delete_manager.delete_source_file(
+                    doc_path, final_md, dry_run, user_confirmed=False
+                )
+                if delete_success:
+                    delete_after_msg = f", 转换后删除: {delete_msg}"
+                    print(f"[DEBUG]   转换后删除成功: {delete_msg}")
+                else:
+                    delete_after_msg = f", 转换后删除失败: {delete_msg}"
+                    print(f"[DEBUG]   转换后删除失败: {delete_msg}")
         
         # 清理临时输出目录（如果配置要求）
         keep_outputs = config.get("conversion.keep_outputs", False)
         if not keep_outputs and doc_out.exists() and not dry_run:
             shutil.rmtree(doc_out, ignore_errors=True)
         
+        delete_msg = delete_before_msg + delete_after_msg
         return TaskResult(doc_path, final_md, "ok", time.perf_counter() - t0, 
-                         f"转换成功{', ' + delete_msg if delete_result else ''}", cmd=cmd)
+                         f"转换成功{delete_msg}", cmd=cmd)
         
     except subprocess.TimeoutExpired:
         return TaskResult(doc_path, final_md, "failed", time.perf_counter() - t0, 
@@ -414,6 +454,8 @@ def run_one(
     except Exception as e:
         return TaskResult(doc_path, final_md, "failed", time.perf_counter() - t0, 
                          f"执行异常: {e}", cmd=cmd)
+
+
 
 
 def main() -> None:
@@ -454,6 +496,16 @@ def main() -> None:
     config = config_mgr.config
     root = Path.cwd()
     
+    # 创建DeleteManager实例
+    delete_manager = None
+    if config["file_handling"]["delete_source"]:
+        delete_manager = DeleteManager(config)
+        print(f"删除功能已启用 - 模式: {config['file_handling']['delete_mode']}")
+        if config["file_handling"]["backup_enabled"]:
+            print(f"备份功能已启用 - 目录: {config['file_handling']['backup_dir']}")
+        if config["file_handling"]["use_trash"]:
+            print("将使用系统回收站（如果可用）")
+    
     # 查找文档
     include_types = config["file_types"]
     include_hidden = config["conversion"]["include_hidden"]
@@ -485,7 +537,7 @@ def main() -> None:
     if workers == 1 or dry_run:
         # 单线程执行（用于dry-run或调试）
         for i, doc_path in enumerate(documents, 1):
-            result = run_one(doc_path, root, config, dry_run)
+            result = run_one(doc_path, root, config, dry_run, delete_manager)
             results.append(result)
             
             # 显示进度
@@ -503,7 +555,7 @@ def main() -> None:
         # 多线程执行
         with cf.ThreadPoolExecutor(max_workers=workers) as executor:
             future_to_doc = {
-                executor.submit(run_one, doc_path, root, config, dry_run): doc_path
+                executor.submit(run_one, doc_path, root, config, dry_run, delete_manager): doc_path
                 for doc_path in documents
             }
             
@@ -544,6 +596,10 @@ def main() -> None:
         base_out = root / "_marker_outputs"
         if base_out.exists():
             shutil.rmtree(base_out, ignore_errors=True)
+    
+    # 显示删除摘要
+    if delete_manager:
+        delete_manager.print_summary()
     
     if fail_count > 0:
         sys.exit(1)

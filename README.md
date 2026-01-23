@@ -32,7 +32,12 @@ tool/ (项目根目录)
 - 支持dry-run模式预览转换计划
 - **配置文件支持**：使用YAML配置文件管理所有设置
 - **灵活的配置优先级**：命令行参数 > 配置文件 > 默认值
-- **删除源文件选项**：转换成功后可选删除源文件（支持交互式确认）
+- **高级删除功能**：支持多种删除模式和安全性选项
+  - 两种删除模式：转换前删除（风险较高）或转换后删除（默认，更安全）
+  - 批量确认模式：交互式、全部确认、全部拒绝
+  - 备份功能：删除前自动备份源文件
+  - 系统回收站：支持使用系统回收站（如果可用）
+  - 删除前验证：验证转换结果后再删除源文件
 - **输出目录配置**：支持多种输出目录模式（同目录、相对路径、绝对路径）
 
 ### Markdown转PDF工具 (md_to_pdf/)
@@ -199,6 +204,56 @@ python md_to_pdf/main.py --workers 4
 python md_to_pdf/main.py --exclude .git node_modules dist
 ```
 
+## 高级删除功能
+
+doc_to_md工具提供了强大的删除功能，可以在转换成功后自动删除源文件，同时提供多种安全措施防止数据丢失。
+
+### 删除模式
+1. **转换后删除（默认）**：先转换文件，验证转换成功后再删除源文件。这是最安全的模式。
+2. **转换前删除（风险较高）**：在转换前就删除源文件。仅当您有可靠备份时使用此模式。
+
+### 批量确认模式
+1. **交互式（默认）**：逐个文件询问是否删除
+2. **全部确认**：自动确认所有删除操作
+3. **全部拒绝**：自动拒绝所有删除操作
+
+### 安全性功能
+1. **备份功能**：删除前自动备份源文件到指定目录
+2. **系统回收站**：使用系统回收站（如果可用），可以从回收站恢复文件
+3. **删除前验证**：验证转换结果后再删除源文件，确保转换成功
+4. **预览模式**：显示将要删除的文件但不实际执行删除操作
+5. **删除日志**：记录所有删除操作到日志文件，便于审计
+
+### 使用示例
+```bash
+# 基本删除功能
+python doc_to_md/main.py --delete-source
+
+# 使用转换前删除模式（风险较高）
+python doc_to_md/main.py --delete-source --delete-mode before_conversion
+
+# 自动确认所有删除
+python doc_to_md/main.py --delete-source --yes
+
+# 启用备份功能
+python doc_to_md/main.py --delete-source --backup-enabled --backup-dir ./backups
+
+# 使用系统回收站
+python doc_to_md/main.py --delete-source --use-trash
+
+# 预览删除操作（不实际执行）
+python doc_to_md/main.py --delete-source --preview-delete
+
+# 记录删除日志
+python doc_to_md/main.py --delete-source --delete-log delete.log
+```
+
+### 安全建议
+1. **首次使用**：先使用`--dry-run`和`--preview-delete`预览操作
+2. **重要文件**：启用备份功能或使用系统回收站
+3. **批量操作**：使用交互式模式或先测试少量文件
+4. **定期检查**：检查删除日志确保操作符合预期
+
 ## 配置文件使用（文档转Markdown工具）
 
 doc_to_md工具支持使用YAML配置文件来管理所有设置，使工具更加专业和用户友好。
@@ -252,8 +307,31 @@ file_handling:
   # 注意：此操作不可逆，请谨慎使用
   delete_source: false
   
+  # 删除模式：
+  # "before_conversion" - 转换前删除（风险较高）
+  # "after_conversion" - 转换后删除（默认，更安全）
+  delete_mode: "after_conversion"
+  
   # 是否交互式询问删除源文件
   ask_before_delete: true
+  
+  # 批量确认模式：
+  # "interactive" - 交互式逐个确认（默认）
+  # "yes_all" - 自动确认所有删除
+  # "no_all" - 自动拒绝所有删除
+  batch_confirmation: "interactive"
+  
+  # 是否启用备份功能
+  backup_enabled: false
+  
+  # 备份目录路径
+  backup_dir: "./backup"
+  
+  # 是否使用系统回收站（如果可用）
+  use_trash: true
+  
+  # 删除前是否验证转换结果
+  verify_before_delete: true
   
   # 排除的目录名（任何位置）
   exclude_dirs:
@@ -323,8 +401,23 @@ python doc_to_md/main.py --show-config
 
 # 删除源文件相关参数
 python doc_to_md/main.py --delete-source          # 转换成功后删除源文件
+python doc_to_md/main.py --delete-mode before_conversion  # 转换前删除（风险较高）
+python doc_to_md/main.py --delete-mode after_conversion   # 转换后删除（默认，更安全）
 python doc_to_md/main.py --ask-before-delete      # 交互式询问是否删除源文件
 python doc_to_md/main.py --no-ask-delete          # 禁用交互式询问删除源文件
+python doc_to_md/main.py --batch-confirm interactive  # 交互式逐个确认（默认）
+python doc_to_md/main.py --batch-confirm yes_all  # 自动确认所有删除
+python doc_to_md/main.py --batch-confirm no_all   # 自动拒绝所有删除
+python doc_to_md/main.py --yes                    # 自动确认所有删除（等同于 --batch-confirm yes_all）
+python doc_to_md/main.py --no                     # 自动拒绝所有删除（等同于 --batch-confirm no_all）
+
+# 安全性参数
+python doc_to_md/main.py --backup-enabled         # 启用备份功能
+python doc_to_md/main.py --backup-dir ./backups   # 指定备份目录
+python doc_to_md/main.py --use-trash              # 使用系统回收站（如果可用）
+python doc_to_md/main.py --no-trash               # 直接删除而不使用回收站
+python doc_to_md/main.py --verify-before-delete   # 删除前验证转换结果（默认启用）
+python doc_to_md/main.py --no-verify-delete       # 禁用删除前验证
 
 # 输出目录相关参数
 python doc_to_md/main.py --exclude .git node_modules  # 排除特定目录
@@ -332,6 +425,10 @@ python doc_to_md/main.py --exclude .git node_modules  # 排除特定目录
 # 性能相关参数
 python doc_to_md/main.py --workers 8              # 指定并发线程数
 python doc_to_md/main.py --timeout 60             # 设置单文件超时时间
+
+# 其他参数
+python doc_to_md/main.py --preview-delete         # 预览删除操作（显示将要删除的文件但不执行）
+python doc_to_md/main.py --delete-log delete.log  # 记录删除操作到日志文件
 ```
 
 ### 配置文件生成

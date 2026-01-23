@@ -33,10 +33,33 @@ performance:
 file_handling:
   # 转换成功后是否删除源文件
   # 注意：此操作不可逆，请谨慎使用
-  delete_source: false
+  delete_source: true
+  
+  # 删除模式：
+  # "before_conversion" - 转换前删除（风险较高）
+  # "after_conversion" - 转换后删除（默认，更安全）
+  delete_mode: "after_conversion"
   
   # 是否交互式询问删除源文件
-  ask_before_delete: true
+  ask_before_delete: false
+  
+  # 批量确认模式：
+  # "interactive" - 交互式逐个确认（默认）
+  # "yes_all" - 自动确认所有删除
+  # "no_all" - 自动拒绝所有删除
+  batch_confirmation: "interactive"
+  
+  # 是否启用备份功能
+  backup_enabled: false
+  
+  # 备份目录路径
+  backup_dir: "./backup"
+  
+  # 是否使用系统回收站（如果可用）
+  use_trash: true
+  
+  # 删除前是否验证转换结果
+  verify_before_delete: true
   
   # 排除的目录名（任何位置）
   exclude_dirs:
