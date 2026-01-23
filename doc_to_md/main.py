@@ -434,7 +434,7 @@ def main() -> int:
     args = ap.parse_args()
 
     script_dir = Path(__file__).resolve().parent
-    root = script_dir
+    root = script_dir.parent  # 从父目录（项目根目录）开始搜索
 
     # 处理文件类型
     if "all" in args.types:

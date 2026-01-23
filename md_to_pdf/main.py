@@ -191,8 +191,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument(
         "--root",
         type=str,
-        default=".",
-        help="Root directory to scan (default: current directory).",
+        default="..",  # 默认从父目录（项目根目录）开始搜索
+        help="Root directory to scan (default: parent directory).",
     )
     parser.add_argument(
         "--workers",
