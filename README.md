@@ -30,6 +30,10 @@ tool/ (项目根目录)
 - 支持多种转换工具（自动选择最佳可用工具）
 - 彩色输出和详细日志
 - 支持dry-run模式预览转换计划
+- **配置文件支持**：使用YAML配置文件管理所有设置
+- **灵活的配置优先级**：命令行参数 > 配置文件 > 默认值
+- **删除源文件选项**：转换成功后可选删除源文件（支持交互式确认）
+- **输出目录配置**：支持多种输出目录模式（同目录、相对路径、绝对路径）
 
 ### Markdown转PDF工具 (md_to_pdf/)
 - 递归搜索项目根目录中的Markdown文件
@@ -85,6 +89,46 @@ pip install pdfminer.six
 ```bash
 # 需要安装md-to-pdf
 npm install -g md-to-pdf
+```
+
+## Python依赖安装
+
+项目使用requirements.txt管理Python依赖。安装所有依赖：
+
+```bash
+# 安装核心Python依赖
+pip install -r requirements.txt
+```
+
+### requirements.txt内容说明
+
+```txt
+# 核心依赖（必须安装）
+pdfminer.six>=20221105    # PDF转换库
+python-docx>=1.1.0        # Word文档处理库
+PyYAML>=6.0               # 配置文件解析库
+
+# 可选依赖（增强功能）
+# 这些工具通过系统包管理器安装，不是Python包
+# - pandoc: 通用文档转换工具（推荐）
+# - antiword: 针对.doc文件的工具
+# - catdoc: 文本提取工具
+# - marker: PDF转Markdown专用工具
+# - pdftotext: 来自poppler工具集
+```
+
+### 依赖验证
+安装后可以验证依赖是否齐全：
+```bash
+# 验证Python依赖
+python -c "import pdfminer; import docx; import yaml; print('所有Python依赖已安装')"
+
+# 验证外部工具
+which pandoc || echo "pandoc未安装（可选）"
+which antiword || echo "antiword未安装（可选）"
+which catdoc || echo "catdoc未安装（可选）"
+which marker || echo "marker未安装（可选）"
+which pdftotext || echo "pdftotext未安装（可选）"
 ```
 
 ## 使用方法
@@ -155,12 +199,146 @@ python md_to_pdf/main.py --workers 4
 python md_to_pdf/main.py --exclude .git node_modules dist
 ```
 
-## 文件类型选项（文档转Markdown工具）
-- `--types pdf`：只处理PDF文件（默认）
-- `--types docx`：只处理DOCX文件
-- `--types doc`：只处理DOC文件
-- `--types pdf docx`：处理PDF和DOCX文件
-- `--types all`：处理所有支持的文件类型
+## 配置文件使用（文档转Markdown工具）
+
+doc_to_md工具支持使用YAML配置文件来管理所有设置，使工具更加专业和用户友好。
+
+### 配置文件位置
+- 默认配置文件：`doc_to_md/config.yaml`
+- 自定义配置文件：使用`--config`参数指定，如`--config custom.yaml`
+
+### 配置优先级
+配置按以下优先级应用（高优先级覆盖低优先级）：
+1. **命令行参数**：最高优先级，直接覆盖其他配置
+2. **配置文件**：中等优先级，覆盖默认值
+3. **默认值**：最低优先级，当没有其他配置时使用
+
+### 配置文件示例
+```yaml
+# doc_to_md 工具配置文件
+# 配置文件优先级：命令行参数 > 配置文件 > 默认值
+
+# 要处理的文件类型（支持：pdf, docx, doc）
+# 可以使用 "all" 表示所有支持的类型
+file_types:
+  - pdf
+  - docx
+
+# 转换选项
+conversion:
+  # 是否强制重新转换已存在的文件
+  force: false
+  
+  # 是否包含隐藏文件/目录
+  include_hidden: false
+  
+  # 是否保留临时输出目录（用于调试）
+  keep_outputs: false
+  
+  # 是否显示详细命令信息
+  verbose_cmd: false
+
+# 并发设置
+performance:
+  # 并发工作线程数（0表示自动检测）
+  workers: 0
+  
+  # 单个文件超时时间（秒，0表示不设超时）
+  timeout: 0
+
+# 文件处理选项
+file_handling:
+  # 转换成功后是否删除源文件
+  # 注意：此操作不可逆，请谨慎使用
+  delete_source: false
+  
+  # 是否交互式询问删除源文件
+  ask_before_delete: true
+  
+  # 排除的目录名（任何位置）
+  exclude_dirs:
+    - .git
+    - node_modules
+    - .venv
+    - venv
+    - dist
+    - build
+    - __pycache__
+    - _marker_outputs
+
+# 输出设置
+output:
+  # 输出目录模式：
+  # "same" - 与源文件同目录
+  # "relative" - 相对于源文件的相对路径
+  # "absolute" - 指定绝对路径
+  directory_mode: "same"
+  
+  # 当 directory_mode 为 "relative" 时的相对路径
+  relative_path: "./converted"
+  
+  # 当 directory_mode 为 "absolute" 时的绝对路径
+  absolute_path: ""
+
+# 工具优先级设置（按顺序尝试）
+tool_priority:
+  pdf:
+    - marker
+    - pdftotext
+    - pdfminer
+  
+  docx:
+    - pandoc
+    - python-docx
+    - antiword
+    - catdoc
+  
+  doc:
+    - antiword
+    - catdoc
+    - pandoc
+
+# 日志设置
+logging:
+  # 日志级别：debug, info, warning, error
+  level: "info"
+  
+  # 是否启用彩色输出
+  color: true
+  
+  # 日志文件路径（空表示不保存到文件）
+  file: ""
+  
+  # 是否在控制台显示进度
+  show_progress: true
+```
+
+### 配置文件相关命令行参数
+```bash
+# 使用自定义配置文件
+python doc_to_md/main.py --config custom.yaml
+
+# 显示当前配置摘要后退出
+python doc_to_md/main.py --show-config
+
+# 删除源文件相关参数
+python doc_to_md/main.py --delete-source          # 转换成功后删除源文件
+python doc_to_md/main.py --ask-before-delete      # 交互式询问是否删除源文件
+python doc_to_md/main.py --no-ask-delete          # 禁用交互式询问删除源文件
+
+# 输出目录相关参数
+python doc_to_md/main.py --exclude .git node_modules  # 排除特定目录
+
+# 性能相关参数
+python doc_to_md/main.py --workers 8              # 指定并发线程数
+python doc_to_md/main.py --timeout 60             # 设置单文件超时时间
+```
+
+### 配置文件生成
+首次运行工具时，如果配置文件不存在，会自动创建默认配置文件`doc_to_md/config.yaml`。您可以修改此文件来自定义工具行为。
+
+### 配置验证
+工具会自动验证配置文件的正确性，如果发现错误会显示明确的错误信息并退出。
 
 ## 工具优先级
 
