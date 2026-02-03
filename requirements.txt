@@ -4,6 +4,7 @@
 pdfminer.six>=20221105
 python-docx>=1.1.0
 PyYAML>=6.0
+openpyxl>=3.1.2
 
 # 可选依赖（增强功能）
 # 这些工具通过系统包管理器安装，不是Python包
